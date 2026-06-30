@@ -14,7 +14,7 @@ gas <- data.frame(
 )
 
 # Q2. 2次の多項式トレンドを推定
-reg <- lm(Y ~ t + I(t^2), data = gas)
+reg <- lm(Y ~ t + t^2, data = gas)
 
 # Q3. トレンドの予測値を gas$trend として追加
 gas$trend <- predict(reg)
