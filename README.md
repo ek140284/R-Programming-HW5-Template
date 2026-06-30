@@ -1,85 +1,67 @@
-# R-Programming-HW4-Template
+# R-Programming-HW5-Template
 
-今回の課題は、2つの公開データを読み込み、国別・年別データを結合する練習である。
+今回の課題は、Rに内蔵されている時系列データ `UKgas`（イギリスの四半期ガス消費量、1960–1986年）を用いて、季節・トレンド分解を手作業で行う練習である。
 
-課題はすべて、`HW4.R` に記載してください。今回の課題に関係ないものが記載されても、採点されません。
+課題はすべて、`HW5.R` に記載してください。今回の課題に関係ないものが記載されても、採点されません。
 
-使用するデータは以下の2つである。
-
-- OWID CO2 and Greenhouse Gas Emissions
+使用するデータは、Rに最初から組み込まれている `UKgas` である（ダウンロード不要）。`UKgas` は四半期ごとのデータ（`frequency = 4`）で、年々大きくなっていく（直線ではなく曲線的な）トレンドと、毎年同じ時期に繰り返す季節変動を持つ。
 
 ```r
-co2_raw <- read.csv("https://raw.githubusercontent.com/owid/co2-data/master/owid-co2-data.csv")
+plot(UKgas)
 ```
 
-- OWID Energy Dataset
-
-```r
-energy_raw <- read.csv("https://raw.githubusercontent.com/owid/energy-data/master/owid-energy-data.csv")
-```
-
-可能な限り、パイプ演算子 `%>%` を使用すること。
-
+**この課題では `stl()`・`decompose()` 関数は使わないこと。**（講義の手動分解と同じ手順で行う。）可能な限り、パイプ演算子 `%>%` を使用すること。
 
 ## 課題
 
-1. 上記2つのデータを読み込み、それぞれ `co2_raw`、`energy_raw` として保存しなさい。
+1. `UKgas` を、時点 `t`（1, 2, 3, …）と観測値 `Y` を持つ data.frame に変換し、`gas` として保存しなさい。
 
-2. `co2_raw` と `energy_raw` の行数・列数を確認し、それぞれ `dim_co2`、`dim_energy` として保存しなさい。
+   - `t` … `1:length(UKgas)`
+   - `Y` … `as.numeric(UKgas)`
 
-3. `co2_raw` から `iso_code` が空ではない行だけを残し、以下の変数だけを抽出して、`co2_selected` として保存しなさい。
+2. 直線ではなく曲線のトレンドを表すため、次の2次式（`t` と `t` の2乗を使う式）を `lm()` で推定し、`reg` として保存しなさい。
 
-| 変数名 | 内容 |
-|:---|:---|
-| country | 国名 |
-| iso_code | 国コード |
-| year | 年 |
-| co2 | CO2排出量 |
-| co2_per_capita | 1人当たりCO2排出量 |
-| population | 人口 |
-| gdp | GDP |
+   ```
+   Y = b0 + b1 * t + b2 * t^2 + u
+   ```
 
-4. `energy_raw` から `iso_code` が空ではない行だけを残し、以下の変数だけを抽出して、`energy_selected` として保存しなさい。ただし、`country` は `country_energy` という変数名に変更すること。
+   ⚠️ 注意：`lm()` の式（formula）の中では `t^2` と書いても「2乗」にはならない（`t` と同じ扱いになってしまう）。2乗を使うには、次のどちらかにすること。
 
-| 変数名 | 内容 |
-|:---|:---|
-| country_energy | 国名 |
-| iso_code | 国コード |
-| year | 年 |
-| primary_energy_consumption | 一次エネルギー消費 |
-| fossil_fuel_consumption | 化石燃料消費 |
-| fossil_share_energy | 化石燃料比率 |
-| renewables_consumption | 再生可能エネルギー消費 |
-| renewables_share_energy | 再生可能エネルギー比率 |
+   - `lm()` の式の中で **`I(t^2)`** と書く、または
+   - あらかじめ2乗の列（例：`t2 = t^2`）を作っておき、それを `lm()` の式で使う。
 
+   これを間違えるとトレンドが正しく求まらず、以降のステップもすべてずれてしまうので注意すること。
 
-5. `co2_selected` と `energy_selected` を、`iso_code` と `year` を key として結合し、`merged_data` として保存しなさい。結合には `left_join()` (co2データを基準に)を使い、`relationship = "one-to-one"` を指定すること。
+3. `reg` の予測値（トレンドの推定値）を求め、`gas` に `trend` という列として追加しなさい。
 
+4. 四半期（Q1, Q2, Q3, Q4）を表す因子を作り、`gas` に `quarter` という列として追加しなさい。1期目が Q1 で、4期ごとに同じ四半期が繰り返す。
 
-6. 結合前後の行数を確認し、それぞれ `n_co2_selected`、`n_merged_data` として保存しなさい。
+5. 各四半期（Q1〜Q4）について、トレンドを除いた残り `Y - trend` の平均を計算しなさい。結果は、`quarter` 列（Q1〜Q4 の4行）と `seasonal` 列（その四半期の平均値）を持つ、**4行2列の表**になる。これを `seasonal_effect` として保存しなさい。
 
+   | quarter | seasonal |
+   |:--|:--|
+   | Q1 | （Q1 の平均） |
+   | Q2 | （Q2 の平均） |
+   | Q3 | （Q3 の平均） |
+   | Q4 | （Q4 の平均） |
 
-7. `merged_data` の欠損値の数を列ごとに確認し、`missing_summary` として保存しなさい。
+6. ステップ5で求めた `seasonal_effect` を `gas` に結合し、各行に「その行の四半期に対応する季節変動の値」を割り当てなさい。これを `gas` の `seasonal` という列として追加する（例：`quarter` が Q1 の行にはすべて Q1 の平均値が入る）。
 
+7. 元データからトレンドと季節変動を引いて、不規則変動を `gas` に `irregular` という列として追加しなさい。
 
-8. `merged_data` から、日本、アメリカ、中国、ドイツの4か国、かつ2000年以降のデータだけを抽出し、`selected_countries` として保存しなさい。
+   ```
+   irregular = Y - trend - seasonal
+   ```
 
+8. 元データ・トレンド・季節変動・不規則変動の4成分をまとめてプロットし、その図を `plot_decomp` として保存しなさい。
 
 ## 提出時に必ず存在している object
 
-採点のため、以下の object 名を必ず使用すること。
+採点のため、以下の object 名、および `gas` の列名（`t`, `Y`, `trend`, `quarter`, `seasonal`, `irregular`）を、すべて**完全に一致**させること。名前が1文字でも違うと、その項目は採点されない。
 
 ```r
-co2_raw
-energy_raw
-dim_co2
-dim_energy
-co2_selected
-energy_selected
-merged_data
-n_co2_selected
-n_merged_data
-missing_summary
-selected_countries
+gas              # 列: t, Y, trend, quarter, seasonal, irregular
+reg              # トレンドの回帰モデル
+seasonal_effect  # 列: quarter, seasonal
+plot_decomp      # 4成分をまとめた図
 ```
-

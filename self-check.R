@@ -1,19 +1,23 @@
 # =====================================================
-# HW4 自動チェックプログラム
+# HW5 自動チェックプログラム
 # =====================================================
-# このファイルは HW4.R と同じフォルダーで実行してください。
+# このファイルは HW5.R と同じフォルダーに置いてください。
 
 rm(list = ls())
+
+if (requireNamespace("rstudioapi", quietly = TRUE) && rstudioapi::isAvailable()) {
+  setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+}
 
 suppressPackageStartupMessages(library(dplyr))
 
 source_result <- tryCatch(
   {
-    source("HW4.R")
+    source("HW5.R")
     TRUE
   },
   error = function(e) {
-    cat("HW4.R の実行中にエラーが発生しました:\n")
+    cat("HW5.R の実行中にエラーが発生しました:\n")
     cat(conditionMessage(e), "\n")
     FALSE
   }
@@ -30,6 +34,14 @@ check <- function(cond, msg_ok, msg_ng) {
   }
 }
 
+# 数値が（許容誤差つきで）一致するか
+approx_equal <- function(a, b, tol = 1e-6) {
+  tryCatch(
+    isTRUE(all.equal(as.numeric(a), as.numeric(b), tolerance = tol)),
+    error = function(e) FALSE
+  )
+}
+
 score <- 0
 
 if (!source_result) {
@@ -39,145 +51,119 @@ if (!source_result) {
 }
 
 # ------------------------------
-# Q1 データ読み込み
+# 参照解（standard answer）を内部で計算
+# ------------------------------
+.n           <- length(UKgas)
+.ref_t       <- 1:.n
+.ref_Y       <- as.numeric(UKgas)
+.ref_reg     <- lm(.ref_Y ~ .ref_t + I(.ref_t^2))
+.ref_trend   <- as.numeric(predict(.ref_reg))
+.ref_quarter <- rep(c("Q1", "Q2", "Q3", "Q4"), times = .n / 4)
+.ref_detr    <- .ref_Y - .ref_trend
+.ref_seas_by <- tapply(.ref_detr, .ref_quarter, mean)        # 四半期ごとの平均
+.ref_seasonal <- as.numeric(.ref_seas_by[.ref_quarter])
+.ref_irreg   <- .ref_Y - .ref_trend - .ref_seasonal
+
+# ------------------------------
+# Q1 gas（t, Y）
 # ------------------------------
 score <- score + check(
-  exists("co2_raw") &&
-    exists("energy_raw") &&
-    is.data.frame(co2_raw) &&
-    is.data.frame(energy_raw) &&
-    nrow(co2_raw) > 10000 &&
-    nrow(energy_raw) > 10000,
-  "Q1 正解：co2_raw と energy_raw が正しく作成されています",
-  "Q1 不正解：co2_raw または energy_raw に問題があります"
+  exists("gas") &&
+    is.data.frame(gas) &&
+    all(c("t", "Y") %in% names(gas)) &&
+    nrow(gas) == .n &&
+    approx_equal(gas$t, .ref_t) &&
+    approx_equal(gas$Y, .ref_Y),
+  "Q1 正解：gas（t, Y）が正しく作成されています",
+  "Q1 不正解：gas の作成（t, Y）に問題があります"
 )
 
 # ------------------------------
-# Q2 dim の保存
+# Q2 reg（2次の多項式トレンド）
 # ------------------------------
 score <- score + check(
-  exists("dim_co2") &&
-    exists("dim_energy") &&
-    identical(dim_co2, dim(co2_raw)) &&
-    identical(dim_energy, dim(energy_raw)),
-  "Q2 正解：dim_co2 と dim_energy は正しいです",
-  "Q2 不正解：dim_co2 または dim_energy が正しくありません"
+  exists("reg") &&
+    inherits(reg, "lm") &&
+    length(coef(reg)) == 3 &&                       # 切片 + t + t^2
+    approx_equal(as.numeric(fitted(reg)), .ref_trend),
+  "Q2 正解：reg は2次の多項式トレンドです",
+  "Q2 不正解：reg のモデル（2次の多項式）に問題があります"
 )
 
 # ------------------------------
-# Q3 co2_selected
-# ------------------------------
-co2_vars <- c(
-  "country",
-  "iso_code",
-  "year",
-  "co2",
-  "co2_per_capita",
-  "population",
-  "gdp"
-)
-
-score <- score + check(
-  exists("co2_selected") &&
-    is.data.frame(co2_selected) &&
-    all(co2_vars %in% names(co2_selected)) &&
-    length(names(co2_selected)) == length(co2_vars) &&
-    all(!is.na(co2_selected$iso_code)) &&
-    all(co2_selected$iso_code != "") &&
-    nrow(co2_selected %>% dplyr::count(iso_code, year) %>% dplyr::filter(n > 1)) == 0,
-  "Q3 正解：co2_selected の構造は正しいです",
-  "Q3 不正解：co2_selected の列、iso_code の処理、または key に問題があります"
-)
-
-# ------------------------------
-# Q4 energy_selected
-# ------------------------------
-energy_vars <- c(
-  "country_energy",
-  "iso_code",
-  "year",
-  "primary_energy_consumption",
-  "fossil_fuel_consumption",
-  "fossil_share_energy",
-  "renewables_consumption",
-  "renewables_share_energy"
-)
-
-score <- score + check(
-  exists("energy_selected") &&
-    is.data.frame(energy_selected) &&
-    all(energy_vars %in% names(energy_selected)) &&
-    length(names(energy_selected)) == length(energy_vars) &&
-    !("country" %in% names(energy_selected)) &&
-    all(!is.na(energy_selected$iso_code)) &&
-    all(energy_selected$iso_code != "") &&
-    nrow(energy_selected %>% dplyr::count(iso_code, year) %>% dplyr::filter(n > 1)) == 0,
-  "Q4 正解：energy_selected の構造は正しいです",
-  "Q4 不正解：energy_selected の列、変数名、iso_code の処理、または key に問題があります"
-)
-
-# ------------------------------
-# Q5 merged_data
-# ------------------------------
-merged_vars <- c(
-  co2_vars,
-  "country_energy",
-  "primary_energy_consumption",
-  "fossil_fuel_consumption",
-  "fossil_share_energy",
-  "renewables_consumption",
-  "renewables_share_energy"
-)
-
-score <- score + check(
-  exists("merged_data") &&
-    is.data.frame(merged_data) &&
-    all(merged_vars %in% names(merged_data)) &&
-    nrow(merged_data) == nrow(co2_selected) &&
-    nrow(merged_data %>% dplyr::count(iso_code, year) %>% dplyr::filter(n > 1)) == 0,
-  "Q5 正解：merged_data は正しく結合されています",
-  "Q5 不正解：merged_data の結合、列、行数、または key に問題があります"
-)
-
-# ------------------------------
-# Q6 行数確認
+# Q3 gas$trend
 # ------------------------------
 score <- score + check(
-  exists("n_co2_selected") &&
-    exists("n_merged_data") &&
-    n_co2_selected == nrow(co2_selected) &&
-    n_merged_data == nrow(merged_data) &&
-    n_co2_selected == n_merged_data,
-  "Q6 正解：結合前後の行数確認は正しいです",
-  "Q6 不正解：n_co2_selected または n_merged_data が正しくありません"
+  exists("gas") &&
+    "trend" %in% names(gas) &&
+    approx_equal(gas$trend, .ref_trend),
+  "Q3 正解：gas$trend は正しいです",
+  "Q3 不正解：gas$trend が正しくありません"
 )
 
 # ------------------------------
-# Q7 欠損値確認
+# Q4 gas$quarter
 # ------------------------------
 score <- score + check(
-  exists("missing_summary") &&
-    is.numeric(missing_summary) &&
-    identical(names(missing_summary), names(merged_data)) &&
-    isTRUE(all.equal(missing_summary, colSums(is.na(merged_data)))),
-  "Q7 正解：missing_summary は正しいです",
-  "Q7 不正解：missing_summary が正しくありません"
+  exists("gas") &&
+    "quarter" %in% names(gas) &&
+    is.factor(gas$quarter) &&
+    setequal(levels(gas$quarter), c("Q1", "Q2", "Q3", "Q4")) &&
+    all(as.character(gas$quarter) == .ref_quarter),
+  "Q4 正解：gas$quarter は正しいです",
+  "Q4 不正解：gas$quarter（四半期ラベル）が正しくありません"
 )
 
 # ------------------------------
-# Q8 selected_countries
+# Q5 seasonal_effect（quarter, seasonal）
 # ------------------------------
-target_countries <- c("Japan", "United States", "China", "Germany")
-
+q5_ok <- FALSE
+if (exists("seasonal_effect") &&
+    is.data.frame(seasonal_effect) &&
+    all(c("quarter", "seasonal") %in% names(seasonal_effect)) &&
+    nrow(seasonal_effect) == 4) {
+  idx <- match(c("Q1", "Q2", "Q3", "Q4"), as.character(seasonal_effect$quarter))
+  q5_ok <- !any(is.na(idx)) &&
+    approx_equal(seasonal_effect$seasonal[idx],
+                 as.numeric(.ref_seas_by[c("Q1", "Q2", "Q3", "Q4")]))
+}
 score <- score + check(
-  exists("selected_countries") &&
-    is.data.frame(selected_countries) &&
-    all(selected_countries$country %in% target_countries) &&
-    all(selected_countries$year >= 2000) &&
-    all(target_countries %in% unique(selected_countries$country)) &&
-    nrow(selected_countries) >= 80,
-  "Q8 正解：selected_countries は正しく抽出されています",
-  "Q8 不正解：selected_countries の国、年、または行数に問題があります"
+  q5_ok,
+  "Q5 正解：seasonal_effect は正しいです",
+  "Q5 不正解：seasonal_effect（quarter, seasonal）が正しくありません"
+)
+
+# ------------------------------
+# Q6 gas$seasonal
+# ------------------------------
+score <- score + check(
+  exists("gas") &&
+    "seasonal" %in% names(gas) &&
+    approx_equal(gas$seasonal, .ref_seasonal),
+  "Q6 正解：gas$seasonal は正しいです",
+  "Q6 不正解：gas$seasonal が正しくありません"
+)
+
+# ------------------------------
+# Q7 gas$irregular（Y = trend + seasonal + irregular）
+# ------------------------------
+score <- score + check(
+  exists("gas") &&
+    "irregular" %in% names(gas) &&
+    approx_equal(gas$irregular, .ref_irreg) &&
+    approx_equal(gas$Y, gas$trend + gas$seasonal + gas$irregular),
+  "Q7 正解：gas$irregular は正しいです",
+  "Q7 不正解：gas$irregular が正しくありません"
+)
+
+# ------------------------------
+# Q8 plot_decomp（図オブジェクト）
+# ------------------------------
+score <- score + check(
+  exists("plot_decomp") &&
+    inherits(plot_decomp, "ggplot"),               # patchwork も ggplot を継承
+  "Q8 正解：plot_decomp（図）が作成されています",
+  "Q8 不正解：plot_decomp が作成されていません"
 )
 
 cat("\n===== チェック終了 =====\n")

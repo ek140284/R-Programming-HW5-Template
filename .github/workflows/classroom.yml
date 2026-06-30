@@ -26,165 +26,163 @@ jobs:
       - name: Install required R packages
         shell: bash
         run: |
-          sudo Rscript -e 'options(repos = c(CRAN = "https://packagemanager.posit.co/cran/__linux__/noble/latest")); install.packages("dplyr", lib = .Library)'
+          sudo Rscript -e 'options(repos = c(CRAN = "https://packagemanager.posit.co/cran/__linux__/noble/latest")); install.packages(c("tidyverse", "patchwork"), lib = .Library)'
 
-      - name: Verify dplyr is available
+      - name: Verify packages are available
         shell: bash
         run: |
-          Rscript -e 'library(dplyr); cat("dplyr OK:", as.character(packageVersion("dplyr")), "\n")'
+          Rscript -e 'library(tidyverse); library(patchwork); cat("packages OK\n")'
 
       # ============================================
-      # Q1 データ読み込み
+      # Q1 gas（t, Y）
       # ============================================
-      - name: Q1 read raw data
+      - name: Q1 gas
         id: q1
         continue-on-error: true
         uses: classroom-resources/autograding-command-grader@v1
         with:
-          test-name: Q1 read raw data
+          test-name: Q1 gas
           command: >
-            Rscript -e "source('HW4.R');
-            if (!exists('co2_raw') || !exists('energy_raw') ||
-                !is.data.frame(co2_raw) || !is.data.frame(energy_raw) ||
-                nrow(co2_raw) <= 1000 || nrow(energy_raw) <= 1000)
+            Rscript -e "source('HW5.R');
+            n <- length(UKgas);
+            ae <- function(a,b) isTRUE(all.equal(as.numeric(a), as.numeric(b), tolerance=1e-6));
+            if (!exists('gas') || !is.data.frame(gas) || !all(c('t','Y') %in% names(gas)) ||
+                nrow(gas) != n || !ae(gas[['t']], 1:n) || !ae(gas[['Y']], as.numeric(UKgas)))
               quit(status=1)"
           max-score: 1
 
       # ============================================
-      # Q2 dim の保存
+      # Q2 reg（2次の多項式トレンド）
       # ============================================
-      - name: Q2 dimensions
+      - name: Q2 reg
         id: q2
         continue-on-error: true
         uses: classroom-resources/autograding-command-grader@v1
         with:
-          test-name: Q2 dimensions
+          test-name: Q2 reg
           command: >
-            Rscript -e "source('HW4.R');
-            if (!exists('dim_co2') || !exists('dim_energy') ||
-                !identical(dim_co2, dim(co2_raw)) ||
-                !identical(dim_energy, dim(energy_raw)))
+            Rscript -e "source('HW5.R');
+            n <- length(UKgas); rt <- 1:n; rY <- as.numeric(UKgas);
+            rtr <- as.numeric(predict(lm(rY ~ rt + I(rt^2))));
+            ae <- function(a,b) isTRUE(all.equal(as.numeric(a), as.numeric(b), tolerance=1e-6));
+            if (!exists('reg') || !inherits(reg,'lm') || length(coef(reg)) != 3 ||
+                !ae(as.numeric(fitted(reg)), rtr))
               quit(status=1)"
           max-score: 1
 
       # ============================================
-      # Q3 co2_selected
+      # Q3 gas$trend
       # ============================================
-      - name: Q3 co2_selected
+      - name: Q3 gas trend
         id: q3
         continue-on-error: true
         uses: classroom-resources/autograding-command-grader@v1
         with:
-          test-name: Q3 co2_selected
+          test-name: Q3 gas trend
           command: >
-            Rscript -e "source('HW4.R');
-            req <- c('country','iso_code','year','co2','co2_per_capita','population','gdp');
-            dup <- dplyr::filter(dplyr::count(co2_selected, iso_code, year), n > 1);
-            if (!exists('co2_selected') || !is.data.frame(co2_selected) ||
-                !all(req %in% names(co2_selected)) || length(names(co2_selected)) != length(req) ||
-                any(is.na(co2_selected[['iso_code']])) || any(co2_selected[['iso_code']] == '') ||
-                nrow(dup) != 0)
+            Rscript -e "source('HW5.R');
+            n <- length(UKgas); rt <- 1:n; rY <- as.numeric(UKgas);
+            rtr <- as.numeric(predict(lm(rY ~ rt + I(rt^2))));
+            ae <- function(a,b) isTRUE(all.equal(as.numeric(a), as.numeric(b), tolerance=1e-6));
+            if (!exists('gas') || !('trend' %in% names(gas)) || !ae(gas[['trend']], rtr))
               quit(status=1)"
           max-score: 1
 
       # ============================================
-      # Q4 energy_selected
+      # Q4 gas$quarter
       # ============================================
-      - name: Q4 energy_selected
+      - name: Q4 gas quarter
         id: q4
         continue-on-error: true
         uses: classroom-resources/autograding-command-grader@v1
         with:
-          test-name: Q4 energy_selected
+          test-name: Q4 gas quarter
           command: >
-            Rscript -e "source('HW4.R');
-            req <- c('country_energy','iso_code','year','primary_energy_consumption',
-                     'fossil_fuel_consumption','renewables_consumption',
-                     'renewables_share_energy','fossil_share_energy');
-            dup <- dplyr::filter(dplyr::count(energy_selected, iso_code, year), n > 1);
-            if (!exists('energy_selected') || !is.data.frame(energy_selected) ||
-                !all(req %in% names(energy_selected)) || length(names(energy_selected)) != length(req) ||
-                ('country' %in% names(energy_selected)) ||
-                any(is.na(energy_selected[['iso_code']])) || any(energy_selected[['iso_code']] == '') ||
-                nrow(dup) != 0)
+            Rscript -e "source('HW5.R');
+            n <- length(UKgas); rq <- rep(c('Q1','Q2','Q3','Q4'), times=n/4);
+            if (!exists('gas') || !('quarter' %in% names(gas)) || !is.factor(gas[['quarter']]) ||
+                !setequal(levels(gas[['quarter']]), c('Q1','Q2','Q3','Q4')) ||
+                !all(as.character(gas[['quarter']]) == rq))
               quit(status=1)"
           max-score: 1
 
       # ============================================
-      # Q5 merged_data
+      # Q5 seasonal_effect（quarter, seasonal）
       # ============================================
-      - name: Q5 merged_data
+      - name: Q5 seasonal_effect
         id: q5
         continue-on-error: true
         uses: classroom-resources/autograding-command-grader@v1
         with:
-          test-name: Q5 merged_data
+          test-name: Q5 seasonal_effect
           command: >
-            Rscript -e "source('HW4.R');
-            req <- c('country','iso_code','year','co2','co2_per_capita','population','gdp',
-                     'country_energy','primary_energy_consumption','fossil_fuel_consumption',
-                     'renewables_consumption','renewables_share_energy','fossil_share_energy');
-            dup <- dplyr::filter(dplyr::count(merged_data, iso_code, year), n > 1);
-            if (!exists('merged_data') || !is.data.frame(merged_data) ||
-                !all(req %in% names(merged_data)) ||
-                nrow(merged_data) != nrow(co2_selected) ||
-                nrow(dup) != 0)
-              quit(status=1)"
+            Rscript -e "source('HW5.R');
+            n <- length(UKgas); rt <- 1:n; rY <- as.numeric(UKgas);
+            rtr <- as.numeric(predict(lm(rY ~ rt + I(rt^2))));
+            rq <- rep(c('Q1','Q2','Q3','Q4'), times=n/4); rsb <- tapply(rY - rtr, rq, mean);
+            ae <- function(a,b) isTRUE(all.equal(as.numeric(a), as.numeric(b), tolerance=1e-6));
+            ok <- FALSE;
+            if (exists('seasonal_effect') && is.data.frame(seasonal_effect) &&
+                all(c('quarter','seasonal') %in% names(seasonal_effect)) && nrow(seasonal_effect)==4) {
+              idx <- match(c('Q1','Q2','Q3','Q4'), as.character(seasonal_effect[['quarter']]));
+              ok <- !any(is.na(idx)) && ae(seasonal_effect[['seasonal']][idx], as.numeric(rsb[c('Q1','Q2','Q3','Q4')]))
+            };
+            if (!ok) quit(status=1)"
           max-score: 1
 
       # ============================================
-      # Q6 行数確認
+      # Q6 gas$seasonal
       # ============================================
-      - name: Q6 row counts
+      - name: Q6 gas seasonal
         id: q6
         continue-on-error: true
         uses: classroom-resources/autograding-command-grader@v1
         with:
-          test-name: Q6 row counts
+          test-name: Q6 gas seasonal
           command: >
-            Rscript -e "source('HW4.R');
-            if (!exists('n_co2_selected') || !exists('n_merged_data') ||
-                n_co2_selected != nrow(co2_selected) ||
-                n_merged_data != nrow(merged_data) ||
-                n_co2_selected != n_merged_data)
+            Rscript -e "source('HW5.R');
+            n <- length(UKgas); rt <- 1:n; rY <- as.numeric(UKgas);
+            rtr <- as.numeric(predict(lm(rY ~ rt + I(rt^2))));
+            rq <- rep(c('Q1','Q2','Q3','Q4'), times=n/4);
+            rse <- as.numeric(tapply(rY - rtr, rq, mean)[rq]);
+            ae <- function(a,b) isTRUE(all.equal(as.numeric(a), as.numeric(b), tolerance=1e-6));
+            if (!exists('gas') || !('seasonal' %in% names(gas)) || !ae(gas[['seasonal']], rse))
               quit(status=1)"
           max-score: 1
 
       # ============================================
-      # Q7 欠損値確認
+      # Q7 gas$irregular（Y = trend + seasonal + irregular）
       # ============================================
-      - name: Q7 missing summary
+      - name: Q7 gas irregular
         id: q7
         continue-on-error: true
         uses: classroom-resources/autograding-command-grader@v1
         with:
-          test-name: Q7 missing summary
+          test-name: Q7 gas irregular
           command: >
-            Rscript -e "source('HW4.R');
-            if (!exists('missing_summary') ||
-                !is.numeric(missing_summary) ||
-                !identical(names(missing_summary), names(merged_data)) ||
-                !isTRUE(all.equal(missing_summary, colSums(is.na(merged_data)))))
+            Rscript -e "source('HW5.R');
+            n <- length(UKgas); rt <- 1:n; rY <- as.numeric(UKgas);
+            rtr <- as.numeric(predict(lm(rY ~ rt + I(rt^2))));
+            rq <- rep(c('Q1','Q2','Q3','Q4'), times=n/4);
+            rse <- as.numeric(tapply(rY - rtr, rq, mean)[rq]); rir <- rY - rtr - rse;
+            ae <- function(a,b) isTRUE(all.equal(as.numeric(a), as.numeric(b), tolerance=1e-6));
+            if (!exists('gas') || !('irregular' %in% names(gas)) || !ae(gas[['irregular']], rir) ||
+                !ae(gas[['Y']], gas[['trend']] + gas[['seasonal']] + gas[['irregular']]))
               quit(status=1)"
           max-score: 1
 
       # ============================================
-      # Q8 selected_countries
+      # Q8 plot_decomp（図オブジェクト）
       # ============================================
-      - name: Q8 selected countries
+      - name: Q8 plot_decomp
         id: q8
         continue-on-error: true
         uses: classroom-resources/autograding-command-grader@v1
         with:
-          test-name: Q8 selected countries
+          test-name: Q8 plot_decomp
           command: >
-            Rscript -e "source('HW4.R');
-            target <- c('Japan','United States','China','Germany');
-            if (!exists('selected_countries') || !is.data.frame(selected_countries) ||
-                !all(selected_countries[['country']] %in% target) ||
-                !all(selected_countries[['year']] >= 2000) ||
-                !all(target %in% unique(selected_countries[['country']])) ||
-                nrow(selected_countries) < 80)
+            Rscript -e "source('HW5.R');
+            if (!exists('plot_decomp') || !inherits(plot_decomp, 'ggplot'))
               quit(status=1)"
           max-score: 1
 
